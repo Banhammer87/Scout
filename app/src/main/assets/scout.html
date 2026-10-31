@@ -1,0 +1,192 @@
+<!doctype html><html lang="en-AU"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clearance Scout · Australia</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#f6f5ef;color:#142e27;font:16px/1.5 system-ui,sans-serif}main{max-width:1040px;margin:auto;padding:32px 20px}header{background:#173e33;color:#fff;padding:32px;border-radius:20px;position:relative}small,b.tag{font-size:.76rem;letter-spacing:.09em;text-transform:uppercase;font-weight:700}.tag{color:#cbef8c}h1{font-size:clamp(2.4rem,7vw,4.5rem);line-height:1;margin:20px 0}h2{margin-bottom:8px}p{margin:8px 0}button,input,select{font:inherit;padding:10px 12px;border-radius:8px;border:1px solid #b7c6bc}button{background:#d5f690;color:#173e33;font-weight:700;cursor:pointer}button:disabled{opacity:.6}a{color:#185541}header button{margin-top:14px}.panel,article,details{background:white;border:1px solid #d5dbd0;border-radius:14px;padding:18px;margin:12px 0}.filters{display:flex;gap:12px;flex-wrap:wrap}.filters label{display:grid;font-size:.82rem;font-weight:700;flex:1;min-width:125px}input,select{width:100%;background:white}#cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:12px}article{margin:0;display:flex;flex-direction:column;gap:6px}article h3{margin:0;font-size:1.14rem}article p{margin:0}article strong{font-size:1.7rem}article a{margin-top:auto;padding-top:8px}mark{align-self:flex-start;background:#def4ac;color:#173e33;padding:3px 8px;border-radius:4px;font-weight:bold}summary{cursor:pointer;font-weight:700}#sources div{margin:7px 0}small{letter-spacing:.04em}del{color:#59665f}footer{margin-top:24px;color:#4f6157}</style>
+<main><header><b class="tag">Field guide / Australian clearance</b><h1>Clearance Scout</h1><p>Find the biggest markdowns across Kmart, Officeworks and BIG W.</p><button id="scan">Scan all three retailers</button><p id="checks" aria-live="polite">Scans load retailer pages on this device. A store may take up to 36 seconds.</p></header>
+<section class="panel"><h2>Scan one retailer</h2><p>Tap a retailer to retrieve its clearance cards here. Each scan runs independently. Dated backup listings remain available if a store cannot be read. Retailers can change prices by location. Check delivery to your postcode before buying.</p><div id="sources" aria-live="polite"></div></section>
+<section class="panel"><h2>Scan diagnostics</h2><p>After a scan fails, export the log to share here. It contains request outcomes and counts. The latest 400 events are kept on this device when storage is available.</p><button id="exportLog">Export scan log</button> <button id="copyLog">Copy scan log</button><p id="logCount" role="status"></p><textarea id="logText" readonly hidden style="width:100%" rows="5"></textarea></section><h2>Deal shortlist</h2><section class="panel filters"><label>Product keyword<input id="keyword" placeholder="e.g. headphones"></label><label>Retailer<select id="filter"><option>All retailers</option></select></label><label>Minimum saving<select id="minimum"><option>20</option><option selected>40</option><option>50</option><option>60</option><option>70</option><option>80</option></select></label><label>Rank by<select id="sort"><option>Percentage off</option><option>Dollars saved</option><option>Lowest price</option></select></label></section><p id="count" aria-live="polite"></p><div id="cards"></div><section class="panel"><h2>Clearance listings to check</h2><p>These listings still need a previous price or three verified shop prices for an online median. Your retailer and keyword filters apply here.</p><div id="leads"></div></section><footer><a href="https://clearance-scout-au.banhammer87.chatgpt.site">Open hosted Scout for price comparisons ↗</a><br>Prices in AUD. Savings compare a single item’s displayed price with its labelled previous price. The online median removes one lowest and one highest offer, then takes the middle remaining price (or averages the middle two). It excludes the clearance retailer and uses one verified in-stock AUD price per other shop. Matches require the same product title, including model or variant terms. Manually added prices are listed separately. Added comparisons are saved on this device when browser storage is available. Stock, postage and seller-specific offers need checking on the product page.</footer></main>
+<script>
+const $=id=>document.getElementById(id);
+const stores={'BIG W':'https://www.bigw.com.au/collection/clearance',Kmart:'https://www.kmart.com.au/category/clearance/shop-all-clearance/',Officeworks:'https://www.officeworks.com.au/shop/officeworks/c/clearance'};
+const seed=[['Moki Hyper Headphones – Orange',6,19,'moki-hyper-headphones-orange/p/101926'],['Crayola World’s Favourite Colours Pencils 50 Pack',10,20,'crayola-world-s-favourite-colours-pencils-50-pack/p/6060393'],['4Gamers Panther Gaming Headset – Glitch Teal',29,59,'4gamers-panther-gaming-headset-glitch-teal/p/564360']].map(([name,now,was,path])=>({name,now,was,url:'https://www.bigw.com.au/product/'+path,store:'BIG W',stamp:'Starter snapshot · 1 Nov 2026'}));
+const backup=[
+ ['Kmart','Anko 940ml Sage Dual Function Drink Bottle',7,14,'https://www.kmart.com.au/product/anko-940ml-sage-dual-function-drink-bottle-43539772/'],
+ ['Kmart','10 Pack Thermal Camera Paper Rolls',12,16,'https://www.kmart.com.au/product/10-pack-thermal-camera-paper-rolls-43506729/'],
+ ['Kmart','Activity Set – Assorted',8,12,'https://www.kmart.com.au/product/activity-set-assorted-43547982/'],
+ ['Officeworks','Glowforge Aura Craft Laser',191,null,'https://www.officeworks.com.au/shop/officeworks/p/glowforge-aura-craft-laser-gfaura']
+].map(([store,name,now,was,url])=>({store,name,now,was,url,stamp:'Indexed snapshot retrieved 1 Nov 2026 · check current price'}));
+let deals=[...seed,...backup]; const states={};const money=n=>new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:2}).format(n);
+function product(raw,store){try{const u=new URL(raw,stores[store]);if(u.protocol!=='https:'||u.hostname!==new URL(stores[store]).hostname||!(/\/p\/|\/product\//.test(u.pathname)))return '';return u.origin+u.pathname}catch{return ''}}
+function prices(text){const s=text.replace(/(\d)(?=originally|was|previously)/gi,'$1 ').replace(/\s+/g,' ');const old=/\b(?:originally|was|previously)\s*:?\s*\$\s*([\d,]+(?:\.\d{1,2})?)/i.exec(s);if(!old)return null;const before=s.slice(0,old.index);if(/\$[\d.,]+\s*[-–]\s*\$|\bfrom\s*\$/i.test(before))return null;const nums=[...before.matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/g)].map(m=>Number(m[1].replaceAll(',','')));if(!nums.length||new Set(nums).size!==1)return null;const now=nums[0],was=Number(old[1].replaceAll(',',''));return now>0&&was>now?{now,was}:null}
+function listedProducts(doc,store){
+ const found=new Map();
+ function visit(x,inList=false){
+  if(Array.isArray(x)){x.forEach(v=>visit(v,inList));return}
+  if(!x||typeof x!=='object')return;
+  if(x['@graph'])visit(x['@graph'],inList);
+  if(x['@type']==='ItemList'){visit(x.itemListElement,true);return}
+  if(inList&&x['@type']==='ListItem'){visit(x.item||x.url,true);return}
+  if(!inList||x['@type']!=='Product'||!x.name||!x.url)return;
+  const url=product(x.url,store);if(!url)return;
+  const offers=[x.offers].flat().filter(o=>o?.priceCurrency==='AUD'&&Number(o.price)>0);
+  found.set(url,{name:x.name,url,now:offers.length===1?Number(offers[0].price):null,was:null})
+ }
+ for(const script of doc.querySelectorAll('script[type="application/ld+json"]')){try{visit(JSON.parse(script.textContent))}catch{}}
+ return found
+}
+function singlePrice(raw){
+ const values=[...raw.matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/g)].map(m=>Number(m[1].replaceAll(',','')));
+ return values.length&&new Set(values).size===1&&values[0]>0?values[0]:null
+}
+function officeCategoryState(doc,found){
+ // Limit extraction to product records in listing arrays. Navigation and recommendation blocks can also contain product URLs.
+ function inspect(value){
+  if(!value||typeof value!=='object')return;
+  for(const [key,child] of Object.entries(value)){
+   if(/recommend|recently|crosssell|upsell/i.test(key))continue;
+   if(/^(products|hits|searchResults|items)$/i.test(key)&&Array.isArray(child)){
+    for(const item of child){
+     if(!item||typeof item!=='object')continue;
+     const href=item.productUrl||item.url||item.link;
+     const name=item.productName||item.name||item.title;
+     if(typeof href!=='string'||typeof name!=='string')continue;
+     const url=product(href,'Officeworks');
+     if(!url||!url.includes('/shop/officeworks/p/'))continue;
+     const raw=item.currentPrice??item.price?.current??item.price;
+     const now=typeof raw==='number'&&Number.isFinite(raw)&&raw>0?raw:null;
+     const old=item.wasPrice??item.previousPrice;
+     if(!found.has(url)||now&&!found.get(url).now)found.set(url,{url,name,now,was:now&&typeof old==='number'&&old>now?old:null})
+    }
+   }else inspect(child)
+  }
+ }
+ for(const script of doc.querySelectorAll('script[type="application/json"],script#__NEXT_DATA__')){
+  try{inspect(JSON.parse(script.textContent))}catch{}
+ }
+}
+function readHtml(html,store){const doc=new DOMParser().parseFromString(html,'text/html'), found=listedProducts(doc,store);if(store==='Officeworks')officeCategoryState(doc,found);for(const a of doc.querySelectorAll('a[href]')){const url=product(a.getAttribute('href'),store);if(!url||found.get(url)?.was)continue;let el=a;for(let depth=0;el&&depth<7;depth++,el=el.parentElement){if([...el.querySelectorAll('a[href]')].some(x=>{const other=product(x.getAttribute('href'),store);return other&&other!==url}))break;const raw=el.textContent.trim();const pair=prices(raw);const name=(a.getAttribute('aria-label')?.trim()||a.textContent.trim()||el.querySelector('img')?.alt||raw).split('$')[0].replace(/^clearance\s*/i,'').trim();if(name.length>3 && !/^image|^add to/i.test(name)){if(pair){found.set(url,{url,name,...pair});break}const now=singlePrice(raw);if(!found.has(url)||now&&!found.get(url).now)found.set(url,{url,name,now,was:null})}}}return [...found.values()]}
+function readMarkdown(md,store){const rows=new Map();const links=[...md.matchAll(/\[([^\n]*?)\]\((https?:\/\/[^\s)]+)\)/g)];for(let i=0;i<links.length;i++){const m=links[i],url=product(m[2],store);if(!url)continue;let label=m[1].replace(/!\[.*?\]\([^)]*\)/g,'').trim(), name=label.split('$')[0].replace(/^clearance\s*/i,'').trim();if(name.length<4||name.length>250)continue;const next=links[i+1]?.index??md.length;const tail=md.slice(m.index+m[0].length,Math.min(next,m.index+m[0].length+220));const pair=prices(label)||prices(label+' '+tail);if(pair||!rows.has(url))rows.set(url,{url,name,now:null,was:null,...pair})}return [...rows.values()]}
+function node(tag,content){const el=document.createElement(tag);el.textContent=content;return el}
+let comparisons={};try{comparisons=JSON.parse(localStorage.getItem('scout-comparisons')||'{}')||{}}catch{}
+function norm(name){return name.normalize('NFKC').toLowerCase().replace(/[–—]/g,'-').replace(/\s+/g,' ').trim()}
+const verifiedOffers=new Map();
+async function checkOther(d,force=false){
+ if(location.protocol==='file:'||!location.hostname.endsWith('.chatgpt.site')){verifiedOffers.set(d.url,{message:'Internet checks run on the hosted Clearance Scout page.'});draw();return}
+ const prior=verifiedOffers.get(d.url);if(prior?.pending||(!force&&prior?.checked&&Date.now()-Date.parse(prior.checked)<900000))return;
+ verifiedOffers.set(d.url,{pending:true});draw();
+ try{
+  const query=new URLSearchParams({name:d.name,store:new URL(d.url).hostname.replace(/^www\./,'')});
+  const response=await fetch('/api/compare?'+query,{signal:AbortSignal.timeout(25000)});if(!response.ok)throw Error();
+  const result=await response.json();logStep('comparison',{store:d.store,offers:result.offers?.length||0,searched:result.searched});
+  verifiedOffers.set(d.url,{...result,message:result.searched?'No matching in-stock AUD price verified.':'Search unavailable or no supported shop found.'});
+ }catch(e){logStep('comparison failed',{store:d.store,error:e.name});verifiedOffers.set(d.url,{message:'Price service unavailable. Retry under Compare shop prices.'})}draw()
+}
+async function checkTop(targets){
+ const ranked=deals.filter(d=>targets.includes(d.store)&&d.now>0).slice().sort((a,b)=>(b.was?b.was-b.now:b.now)-(a.was?a.was-a.now:a.now));
+ const head=ranked.slice(0,5);let done=0;
+ $('checks').textContent='Checking other shops for '+head.length+' products…';
+ await Promise.all([0,1].map(async lane=>{for(let i=lane;i<head.length;i+=2){await checkOther(head[i]);done++;$('checks').textContent='Price checks completed for '+done+' of '+head.length+' products.'}}))
+}
+function onlineBenchmark(offers=[]){
+ const sorted=offers.filter(x=>Number.isFinite(x.price)&&x.price>0).slice().sort((a,b)=>a.price-b.price);
+ const retained=sorted.slice(1,-1);
+ const mid=Math.floor(retained.length/2);
+ const median=retained.length?(retained.length%2?retained[mid].price:(retained[mid-1].price+retained[mid].price)/2):null;
+ return {sorted,median}
+}
+function referencePrice(d){
+ return d.was||onlineBenchmark(verifiedOffers.get(d.url)?.offers).median
+}
+function comparison(card,d){
+ const result=verifiedOffers.get(d.url);
+ const offers=result?.offers||[];
+ const {sorted,median}=onlineBenchmark(offers);
+ if(median!==null){
+  card.append(node('strong','Online median '+money(median)),node('p',sorted.length+' verified shops · lowest and highest excluded'));
+ }else card.append(node('p',result?.pending?'Checking other shops…':sorted.length?'Online median needs 3 shops · '+sorted.length+' found':result?.message||'Online median · unchecked'));
+ if(result?.checked)card.append(node('small','Checked '+new Date(result.checked).toLocaleString('en-AU')));
+ const box=node('details','');box.append(node('summary','Compare shop prices'));
+ for(const [i,x] of sorted.entries()){const edge=median!==null&&(i===0||i===sorted.length-1);const a=node('a',new URL(x.url).hostname+' · '+money(x.price)+(edge?' · excluded':''));a.href=x.url;a.target='_blank';a.rel='noopener';box.append(a,node('br',''))}
+ const button=node('button','Find this product online');button.disabled=!!result?.pending;button.onclick=()=>ScoutDevice.open('https://www.google.com.au/search?tbm=shop&q='+encodeURIComponent(d.name));box.append(button,node('br',''));
+ for(const x of comparisons[d.url]||[]){const a=node('a','Manually added · '+new URL(x.url).hostname+' · '+money(x.price));a.href=x.url;a.target='_blank';a.rel='noopener';box.append(a,node('br',''))}
+ if(result?.google?.state==='searched'){
+  box.append(node('p','Google Shopping options · advertised prices, excluded from the median'));
+  for(const x of result.google.options){const link=node('a',x.name+' · '+x.shop+(x.price?' · '+x.price:''));link.href=x.url;link.target='_blank';link.rel='noopener';box.append(link,node('br',''))}
+ }
+ const search=node('a','Find this product at other shops ↗');search.href='https://www.google.com.au/search?q='+encodeURIComponent(d.name+' Australia price');search.target='_blank';search.rel='noopener';box.append(search);
+ const form=node('form',''),price=node('input',''),url=node('input',''),msg=node('p','');
+ price.type='number';price.min='.01';price.step='.01';price.required=true;url.type='url';url.required=true;
+ for(const [input,title] of [[url,'Matching product page'],[price,'Current AUD price']]){const label=node('label',title);label.append(input);form.append(label)}
+ form.append(node('p','Match the model, size, colour and pack quantity. Enter the item price before postage.'),node('button','Add comparison'),msg);
+ form.onsubmit=e=>{e.preventDefault();const u=new URL(url.value);if(u.protocol!=='https:'||u.hostname.replace(/^www\./,'')===new URL(d.url).hostname.replace(/^www\./,'')){msg.textContent='Use an HTTPS product page from another shop.';return}comparisons[d.url]=(comparisons[d.url]||[]).filter(x=>new URL(x.url).hostname.replace(/^www\./,'')!==u.hostname.replace(/^www\./,''));comparisons[d.url].push({url:u.href,price:Number(price.value)});try{localStorage.setItem('scout-comparisons',JSON.stringify(comparisons))}catch{}draw()};box.append(form);
+ if(comparisons[d.url]?.length){const reset=node('button','Clear added prices');reset.onclick=()=>{delete comparisons[d.url];try{localStorage.setItem('scout-comparisons',JSON.stringify(comparisons))}catch{}draw()};box.append(reset)}card.append(box)}
+function draw(){
+ const leads=deals.filter(d=>!referencePrice(d)&&($('filter').value==='All retailers'||d.store===$('filter').value)&&d.name.toLowerCase().includes($('keyword').value.trim().toLowerCase()));
+ $('leads').replaceChildren();for(const d of leads){const row=node('article',''),link=node('a',d.name+' ↗');link.href=d.url;link.target='_blank';link.rel='noopener';row.append(node('small',d.store),link,node('p',d.now?money(d.now)+' listed · previous price unavailable':'Check price at retailer'),node('small',d.stamp));if(d.now)comparison(row,d);$('leads').append(row)}if(!leads.length)$('leads').append(node('p','No additional listings for these filters.'));
+const selected=deals.filter(d=>referencePrice(d)>0&&d.now>0&&($('filter').value==='All retailers'||d.store===$('filter').value)&&d.name.toLowerCase().includes($('keyword').value.toLowerCase().trim())&&((referencePrice(d)-d.now)*100+1e-8>=Number($('minimum').value)*referencePrice(d)));const score=d=>[$('sort').selectedIndex===0?(referencePrice(d)-d.now)/referencePrice(d):$('sort').selectedIndex===1?referencePrice(d)-d.now:-d.now][0];selected.sort((a,b)=>score(b)-score(a));$('count').textContent=selected.length+' matching '+(selected.length===1?'deal':'deals')+' · minimum '+$('minimum').value+'% below reference';$('cards').replaceChildren();for(const d of selected){const card=node('article',''),a=node('a','Check retailer price ↗');a.href=d.url;a.target='_blank';a.rel='noopener';card.append(node('small',d.store),node('mark',Math.floor((referencePrice(d)-d.now)*100/referencePrice(d)+1e-8)+(d.was?'% off':'% below online median')),node('h3',d.name),node('strong',money(d.now)),node('p',(d.was?'Was ':'Online median ')+money(referencePrice(d))+(d.was?' · save ':' · priced below by ')+money(referencePrice(d)-d.now)),node('small',d.stamp),a);comparison(card,d);$('cards').append(card)}if(!selected.length)$('cards').append(node('p','No matching deals in the loaded pages. Try a lower threshold or import another clearance page.'))}
+function accept(rows,store,stamp,replace){if(replace)deals=deals.filter(d=>d.store!==store);for(const row of rows){deals=deals.filter(d=>d.url!==row.url);deals.push({...row,store,stamp})}draw()}
+const logKey='scout-diagnostics-v1';
+let events=[];try{const saved=JSON.parse(localStorage.getItem(logKey)||'[]');if(Array.isArray(saved))events=saved.slice(-400)}catch{}
+let runId=null;
+function logStep(step,details={}){
+ events.push({time:new Date().toISOString(),run:runId,step,...details});events=events.slice(-400);
+ try{localStorage.setItem(logKey,JSON.stringify(events))}catch{}
+ $('logCount').textContent=events.length+' events recorded';
+}
+function logText(){return JSON.stringify({version:'scan-log-1',exported:new Date().toISOString(),mode:'android-webview',online:navigator.onLine,events},null,2)}
+$('exportLog').onclick=()=>{
+ const blob=new Blob([logText()],{type:'application/json'});
+ const href=URL.createObjectURL(blob),a=document.createElement('a');a.href=href;a.download='Clearance-Scout-log-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),60000)
+};
+$('copyLog').onclick=async()=>{const field=$('logText');field.hidden=false;field.value=logText();try{await navigator.clipboard.writeText(field.value);$('logCount').textContent='Log copied'}catch{field.focus();field.select();$('logCount').textContent='Select Copy to copy the log'}};
+$('logCount').textContent=events.length+' events recorded';
+async function get(url,store,route){
+ const start=performance.now(),c=new AbortController(),timer=setTimeout(()=>c.abort(),20000);
+ let status=null,type=null,upstream=null;
+ try{
+  const r=await fetch(url,{signal:c.signal,credentials:url.startsWith('/api/')?'same-origin':'omit'});
+  status=r.status;type=(r.headers.get('content-type')||'').split(';')[0];
+  upstream=r.headers.get('X-Scout-Upstream');
+  if(!r.ok)throw Error('http');
+  const body=await r.text();logStep('response',{store,route,status,type,upstream,length:body.length,ms:Math.round(performance.now()-start)});return body
+ }catch(e){logStep('request failed',{store,route,status,type,upstream,reason:c.signal.aborted?'timeout':status?'HTTP response':'network or browser restriction',ms:Math.round(performance.now()-start)});throw e}
+ finally{clearTimeout(timer)}
+}
+const alternate={Kmart:'https://www.kmart.com.au/category/tech-and-gaming/technology-clearance/',Officeworks:'https://www.officeworks.com.au/shop/officeworks/b/clearance-printing'};
+const hostedOrigin='https://clearance-scout-au.banhammer87.chatgpt.site';
+const scanOrder=['Kmart','Officeworks','BIG W'];
+const scanButtons=[];
+
+const pending=new Map();
+window.scoutResult=(store,rows,status)=>{
+ const stamp='On-device scan · '+new Date().toLocaleString('en-AU');
+ if(rows.length)accept(rows,store,stamp,true);
+ states[store].textContent=rows.length+' rendered listings · '+status;
+ logStep('device result',{store,rows:rows.length,priced:rows.filter(x=>x.now).length,status});
+ pending.get(store)?.();pending.delete(store)
+};
+async function runScan(choice){
+ const targets=choice==='all'?scanOrder:[choice];
+ if($('scan').disabled)return;
+ $('scan').disabled=true;scanButtons.forEach(b=>b.disabled=true);
+ $('filter').value=choice==='all'?'All retailers':choice;draw();
+ runId=new Date().toISOString();logStep('device scan started',{choice});
+ try{
+  for(const store of targets){
+   states[store].textContent='Loading retailer page on this phone…';
+   await new Promise(resolve=>{pending.set(store,resolve);ScoutDevice.scan(store)})
+  }
+ }finally{$('scan').disabled=false;scanButtons.forEach(b=>b.disabled=false);logStep('device scan finished',{choice})}
+}
+for(const [index,store] of scanOrder.entries()){
+ for(const id of ['filter'])$(id).add(new Option(store,store));
+ const line=node('div',''),button=node('button',(index+1)+'. Scan '+store);
+ button.onclick=()=>runScan(store);scanButtons.push(button);
+ const state=node('span',deals.filter(d=>d.store===store).length+' dated backup listings');states[store]=state;
+ line.append(button,' ',state);$('sources').append(line)
+}
+
+$('scan').onclick=()=>runScan('all');
+$('exportLog').onclick=()=>ScoutDevice.export(logText());
+$('copyLog').onclick=()=>{ScoutDevice.copy(logText());$('logCount').textContent='Log copied'};
+document.addEventListener('click',event=>{const a=event.target.closest('a');if(a){event.preventDefault();ScoutDevice.open(a.href)}});
+for(const id of ['keyword','minimum','sort','filter'])$(id).oninput=draw;for(const opt of $('minimum').options){opt.value=opt.value;opt.textContent=opt.value+'%'};draw();
+</script></html>

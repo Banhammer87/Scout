@@ -1,0 +1,12 @@
+plugins { id 'com.android.application' version '8.7.3' }
+android {
+    namespace 'au.scout.mobile'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'au.scout.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1'
+    }
+}
