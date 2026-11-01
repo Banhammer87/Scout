@@ -23,4 +23,24 @@ if(/verify you are human|access denied|checking your browser/i.test(text))return
    if(pair)break;
   }
  }
-window.scrollBy(0,Math.max(400,innerHeight*.85));return {rows:[...rows.values()]}})();
+if(store!=='Kmart'){
+ window.scrollBy(0,Math.max(400,innerHeight*.85));return {rows:[...rows.values()]}
+}
+const scroller=document.scrollingElement||document.documentElement;
+const atEnd=scroller.scrollTop+innerHeight>=scroller.scrollHeight-8;
+let advance=null;
+if(atEnd&&allowAdvance&&rows.size){
+ const controls=[...document.querySelectorAll('a[href],button,[role="button"]')];
+ const next=controls.find(el=>{
+  if(!el.getClientRects().length||el.disabled||el.getAttribute('aria-disabled')==='true')return false;
+  const label=(el.getAttribute('aria-label')||el.innerText||'').trim();
+  const pager=el.closest('[aria-label*="pagination" i],[class*="pagination" i],[data-testid*="pagination" i]');
+  if(el.href){const dest=new URL(el.href,location.href);if(dest.origin!==location.origin||dest.pathname.replace(/\/$/,'')!==location.pathname.replace(/\/$/,''))return false}
+  return /^(load|show|view) more(?: products| items| results)?$/i.test(label)||el.rel==='next'||(pager&&/^(?:go to )?next(?: page)?$/i.test(label))||(pager&&new RegExp('^(?:(?:go to )?page )?'+nextPage+'$','i').test(label));
+ });
+ if(next)advance=next;
+}
+if(!atEnd)window.scrollBy(0,Math.max(400,innerHeight*.85));
+if(advance)setTimeout(()=>advance.click(),30);
+return {rows:[...rows.values()],atEnd,advanced:!!advance};
+})();

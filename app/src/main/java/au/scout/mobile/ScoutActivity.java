@@ -31,7 +31,9 @@ public class ScoutActivity extends Activity {
     private String activeStore;
     private long deadline;
     private final Map<String,JSONObject> cards = new LinkedHashMap<>();
-    private int passes;
+    private int passes, batch;
+    private boolean awaitingNew;
+    private long lastGrowth;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -100,7 +102,7 @@ public class ScoutActivity extends Activity {
     }
     private void start(String store){
         if(!urls.containsKey(store)||retailer!=null)return;
-        activeStore=store;cards.clear();passes=0;
+        activeStore=store;cards.clear();passes=0;batch=1;awaitingNew=false;lastGrowth=SystemClock.elapsedRealtime();
         retailer=makeView();WebView current=retailer;
         frame.addView(current,0,new FrameLayout.LayoutParams(-1,-1));
         current.setWebViewClient(new WebViewClient(){
@@ -108,28 +110,47 @@ public class ScoutActivity extends Activity {
                 return r.isForMainFrame()&&!sameShop(r.getUrl().toString());
             }
         });
-        deadline=SystemClock.elapsedRealtime()+35000;
+        long limit="Kmart".equals(store)?180000:35000;
+        deadline=SystemClock.elapsedRealtime()+limit;
         current.loadUrl(urls.get(store));
         handler.postDelayed(()->poll(current),1500);
-        handler.postDelayed(()->{if(retailer==current)finishScan("Scan time limit reached");},36000);
+        handler.postDelayed(()->{if(retailer==current)finishScan("Scan time limit reached");},limit+1000);
     }
     private void poll(WebView v){
         if(v!=retailer)return;
-        if(SystemClock.elapsedRealtime()>=deadline){finishScan("No readable cards before timeout");return;}
+        if(SystemClock.elapsedRealtime()>=deadline){finishScan("Time limit reached; collected "+cards.size()+" products");return;}
         if(!sameShop(v.getUrl())){handler.postDelayed(()->poll(v),800);return;}
-        v.evaluateJavascript(extractor,value->{
+        long tick=SystemClock.elapsedRealtime();
+        boolean canAdvance=!awaitingNew && !cards.isEmpty() && tick-lastGrowth>=3000 && batch<15;
+        String script="(()=>{const allowAdvance="+canAdvance+", nextPage="+(batch+1)+";return "+extractor+"})()";
+        if(!"Kmart".equals(activeStore))script=extractor;
+        v.evaluateJavascript(script,value->{
             if(v!=retailer)return;
             try{
                 JSONObject data=new JSONObject(value);
                 if(data.optBoolean("blocked")){finishScan("Retailer requested browser verification");return;}
+                int before=cards.size();
                 JSONArray rows=data.optJSONArray("rows");
                 if(rows!=null)for(int i=0;i<rows.length();i++){
                     JSONObject row=rows.getJSONObject(i);
                     String link=row.getString("url");
                     if(sameShop(link)&&(!cards.containsKey(link)||!row.isNull("now")))cards.put(link,row);
                 }
+                if("Kmart".equals(activeStore)){
+                    if(cards.size()>before){
+                        if(awaitingNew){batch++;awaitingNew=false;}
+                        lastGrowth=tick;
+                        dashboard.evaluateJavascript("window.scoutProgress("+batch+","+cards.size()+")",null);
+                    }
+                    if(data.optBoolean("advanced")){awaitingNew=true;lastGrowth=tick;}
+                    if(awaitingNew&&tick-lastGrowth>14000){finishScan("Next page supplied no new products");return;}
+                    if(!awaitingNew&&data.optBoolean("atEnd")&&!cards.isEmpty()&&tick-lastGrowth>8500){
+                        finishScan(batch>=15?"Reached 15-batch limit":"Reached end of loaded listings");return;
+                    }
+                    if(cards.isEmpty()&&tick-lastGrowth>35000){finishScan("Page one supplied no readable product cards");return;}
+                }
             }catch(Exception ignored){}
-            if(!cards.isEmpty()&&++passes>=4){finishScan("Rendered clearance cards");return;}
+            if(!"Kmart".equals(activeStore)&&!cards.isEmpty()&&++passes>=4){finishScan("Rendered clearance cards");return;}
             handler.postDelayed(()->poll(v),1500);
         });
     }
